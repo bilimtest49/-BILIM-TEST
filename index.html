@@ -6,11 +6,137 @@
 <section id="setup" class="hidden"><button class="soft" onclick="show('home')">← Басты бет</button><div class="panel"><h2>Supabase байланысы</h2><div class="notice">Тек Project URL және publishable/anon public key енгізіңіз. service_role немесе secret key-ді ешқашан браузерге салмаңыз.</div><div class="field"><label>Project URL</label><input id="url" placeholder="https://....supabase.co"></div><div class="field"><label>Publishable key / anon public key</label><textarea id="key"></textarea></div><button class="primary" onclick="connect()">Байланыстыру</button><div id="setupMsg"></div></div></section>
 <section id="teacherLogin" class="hidden"><button class="soft" onclick="show('home')">← Басты бет</button><div class="panel" style="max-width:500px;margin:20px auto"><h2>Мұғалімнің кіруі</h2><div class="field"><label>Электрондық пошта</label><input id="email" type="email"></div><div class="field"><label>Құпиясөз</label><input id="password" type="password"></div><button class="primary" onclick="login()">Кіру</button><div id="loginMsg"></div></div></section>
 <section id="studentLogin" class="hidden"><button class="soft" onclick="show('home')">← Басты бет</button><div class="panel" style="max-width:520px;margin:20px auto"><h2>Оқушының тестке кіруі</h2><div class="field"><label>Аты-жөні</label><input id="sname"></div><div class="formgrid"><div class="field"><label>Сыныбы</label><input id="sclass" placeholder="5А"></div><div class="field"><label>Тест коды</label><input id="scode"></div></div><button class="primary" onclick="startTest()">Тестті бастау</button><div id="studentMsg"></div></div></section>
-<section id="teacher" class="hidden"><div class="row between"><div><button class="soft" onclick="logout()">Шығу</button><h2>Мұғалім кабинеті</h2><span id="teacherName" class="muted"></span></div><button class="primary" onclick="tab('create')">＋ Жаңа тест</button></div><div class="tabs"><button class="tab active" onclick="tab('tests',this)">Менің тесттерім</button><button class="tab" onclick="tab('results',this)">Нәтижелер</button><button class="tab" onclick="tab('create',this)">Тест құру</button></div><div id="tests"></div><div id="results" class="hidden"></div><div id="create" class="hidden"></div></section>
+<section id="teacher" class="hidden"><div class="row between"><div><button class="soft" onclick="logout()">Шығу</button><h2>Мұғалім кабинеті</h2><span id="teacherName" class="muted"></span></div><button class="primary" onclick="tab('create')">＋ Жаңа тест</button></div><div class="tabs"><button class="tab active" onclick="tab('tests',this)">Менің тесттерім</button><button class="tab" onclick="tab('results',this)">Нәтижелер</button><button class="tab" onclick="tab('create',this)">Тест құру</button><button class="tab" onclick="tab('ai',this)">✨ ЖИ тест</button></div><div id="tests"></div><div id="results" class="hidden"></div><div id="create" class="hidden"></div><div id="ai" class="hidden"></div></section>
 <section id="exam" class="hidden"><h2 id="examTitle"></h2><p id="examMeta" class="muted"></p><div class="panel" id="examQuestions"></div><button class="primary" style="margin-top:14px" onclick="finishTest()">Тестті аяқтау</button></section><section id="result" class="hidden"><div class="panel"><h2>Тест аяқталды</h2><h1 id="score"></h1><p id="summary"></p><div id="mistakes"></div><button class="primary" onclick="show('home')">Басты бет</button></div></section>
 </main><footer>BILIM TEST · №49 мектеп</footer><script>
-let db=null,authUser=null,profile=null,examData=null,studentData=null,draft=[];const $=id=>document.getElementById(id);function show(id){document.querySelectorAll('main>section').forEach(s=>s.classList.add('hidden'));$(id).classList.remove('hidden');scrollTo(0,0)}function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function message(id,t,cls='error'){$(id).innerHTML=`<div class="${cls}">${esc(t)}</div>`}function client(){if(db)return true;let u=localStorage.getItem('bt_url'),k=localStorage.getItem('bt_key');if(!u||!k){show('setup');return false}db=supabase.createClient(u,k);return true}async function connect(){let u=$('url').value.trim(),k=$('key').value.trim();if(!u.startsWith('https://')||!k)return message('setupMsg','URL мен public key енгізіңіз.');localStorage.setItem('bt_url',u);localStorage.setItem('bt_key',k);db=supabase.createClient(u,k);let {error}=await db.from('tests').select('id').limit(1);if(error)message('setupMsg',error.message);else message('setupMsg','Supabase байланысы сәтті тексерілді.','success')}async function login(){if(!client())return;let {data,error}=await db.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});if(error)return message('loginMsg',error.message);authUser=data.user;let p=await db.from('profiles').select('*').eq('id',authUser.id).single();if(p.error){await db.auth.signOut();authUser=null;return message('loginMsg','Профиль табылмады. Әкімші profiles кестесіне тіркеуі керек.')}profile=p.data;$('teacherName').textContent=profile.full_name+' · '+profile.role;show('teacher');tab('tests')}async function logout(){if(db)await db.auth.signOut();authUser=null;show('home')}function tab(which,btn){['tests','results','create'].forEach(id=>$(id).classList.add('hidden'));document.querySelectorAll('#teacher .tab').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');$(which).classList.remove('hidden');if(which==='tests')loadTests();if(which==='results')loadResults();if(which==='create')renderCreate()}async function loadTests(){let {data,error}=await db.from('tests').select('*').order('created_at',{ascending:false});if(error)return message('tests',error.message);$('tests').innerHTML=data.length?`<div class="panel tablewrap"><table><tr><th>Тест</th><th>Бағыты</th><th>Сынып</th><th>Код</th><th>Күйі</th><th></th></tr>${data.map(t=>`<tr><td>${esc(t.title)}</td><td>${esc(t.test_type)}</td><td>${esc(t.grade)}</td><td><b>${esc(t.test_code)}</b></td><td>${t.is_published?'Жарияланған':'Жоба'}</td><td><button class="soft" onclick="publish('${t.id}',${!t.is_published})">${t.is_published?'Жасыру':'Жариялау'}</button></td></tr>`).join('')}</table></div>`:'<div class="panel">Әзірге тест жоқ.</div>'}async function publish(id,v){let {error}=await db.from('tests').update({is_published:v}).eq('id',id);if(error)alert(error.message);else loadTests()}
-function renderCreate(){$('create').innerHTML=`<div class="panel"><h3>Жаңа тест</h3><div class="formgrid"><div class="field"><label>Тест атауы</label><input id="ttitle"></div><div class="field"><label>Бағыты</label><select id="ttype"><option>ББЖМ</option><option>PISA</option><option>Пәндік тест</option></select></div><div class="field"><label>Пән</label><input id="tsubject"></div><div class="field"><label>Сынып</label><input id="tgrade" placeholder="7"></div></div><div class="field"><label>Word файлын жүктеу (.docx)</label><input id="docx" type="file" accept=".docx"><span class="muted">Үлгі: 1. Сұрақ?; A) ... B) ... C) ... D) ...; Жауабы: B</span></div><button class="soft" onclick="importWord()">Word файлын оқу</button><div id="wordMsg"></div><div id="editor"></div><div class="row"><button class="soft" onclick="addQ()">＋ Сұрақ қосу</button><button class="primary" onclick="saveTest()">Тестті сақтау</button></div></div>`;draft=[{text:'',opts:['','','',''],correct:0}];drawQ()}function addQ(){readQ();draft.push({text:'',opts:['','','',''],correct:0});drawQ()}function readQ(){draft=draft.map((q,i)=>({text:$('qtext'+i).value,opts:[0,1,2,3].map(j=>$('opt'+i+j).value),correct:+$('correct'+i).value}))}function drawQ(){$('editor').innerHTML=draft.map((q,i)=>`<div class="q"><b>${i+1}-сұрақ</b><div class="field"><label>Сұрақ мәтіні</label><textarea id="qtext${i}">${esc(q.text)}</textarea></div><div class="formgrid">${q.opts.map((v,j)=>`<div class="field"><label>${'ABCD'[j]} жауабы</label><input id="opt${i}${j}" value="${esc(v)}"></div>`).join('')}</div><div class="field"><label>Дұрыс жауап</label><select id="correct${i}">${['A','B','C','D'].map((x,j)=>`<option value="${j}" ${q.correct===j?'selected':''}>${x}</option>`).join('')}</select></div></div>`).join('')}async function importWord(){let f=$('docx').files[0];if(!f)return message('wordMsg','Алдымен DOCX файлын таңдаңыз.');try{let x=await mammoth.extractRawText({arrayBuffer:await f.arrayBuffer()}),blocks=x.value.split(/\n(?=\s*\d+[.)]\s*)/).filter(s=>s.trim()),out=[];for(let b of blocks){let lines=b.split('\n').map(s=>s.trim()).filter(Boolean),text=(lines.shift()||'').replace(/^\d+[.)]\s*/,''),opts=['','','',''],correct=0;for(let l of lines){let m=l.match(/^([A-DА-Г])[).:]?\s*(.*)$/i);if(m){let c=m[1].toUpperCase(),ix=({A:0,Б:1,B:1,В:2,C:2,Г:3,D:3})[c];if(ix!==undefined)opts[ix]=m[2]}let a=l.match(/(?:жауабы|дұрыс жауап)\s*[:-]\s*([A-DА-Г])/i);if(a){let c=a[1].toUpperCase();correct=({A:0,Б:1,B:1,В:2,C:2,Г:3,D:3})[c]??0}}if(text)out.push({text,opts,correct})}if(!out.length)return message('wordMsg','Сұрақтар танылмады. Қолмен енгізіңіз.');draft=out;drawQ();message('wordMsg',out.length+' сұрақ импортталды. Дұрыс жауаптарды тексеріңіз.','success')}catch(e){message('wordMsg',e.message)}}async function saveTest(){readQ();let title=$('ttitle').value.trim(),grade=$('tgrade').value.trim();if(!title||!grade||!draft.length||draft.some(q=>!q.text.trim()||q.opts.some(o=>!o.trim())))return alert('Барлық сұрақтар мен жауап нұсқаларын толтырыңыз.');let code=Math.random().toString(36).slice(2,8).toUpperCase();let {data,error}=await db.from('tests').insert({teacher_id:authUser.id,title,subject:$('tsubject').value.trim(),grade,test_type:$('ttype').value,test_code:code}).select().single();if(error)return alert(error.message);let rows=draft.map((q,i)=>({test_id:data.id,question_text:q.text,options:q.opts,correct_option:q.correct,question_order:i+1}));let r=await db.from('questions').insert(rows);if(r.error){await db.from('tests').delete().eq('id',data.id);return alert(r.error.message)}alert('Тест сақталды. Оқушы коды: '+code);tab('tests',document.querySelector('#teacher .tab'))}
+let db=null,authUser=null,profile=null,examData=null,studentData=null,draft=[];const $=id=>document.getElementById(id);function show(id){document.querySelectorAll('main>section').forEach(s=>s.classList.add('hidden'));$(id).classList.remove('hidden');scrollTo(0,0)}function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function message(id,t,cls='error'){$(id).innerHTML=`<div class="${cls}">${esc(t)}</div>`}function client(){if(db)return true;let u=localStorage.getItem('bt_url'),k=localStorage.getItem('bt_key');if(!u||!k){show('setup');return false}db=supabase.createClient(u,k);return true}async function connect(){let u=$('url').value.trim(),k=$('key').value.trim();if(!u.startsWith('https://')||!k)return message('setupMsg','URL мен public key енгізіңіз.');localStorage.setItem('bt_url',u);localStorage.setItem('bt_key',k);db=supabase.createClient(u,k);let {error}=await db.from('tests').select('id').limit(1);if(error)message('setupMsg',error.message);else message('setupMsg','Supabase байланысы сәтті тексерілді.','success')}async function login(){if(!client())return;let {data,error}=await db.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});if(error)return message('loginMsg',error.message);authUser=data.user;let p=await db.from('profiles').select('*').eq('id',authUser.id).single();if(p.error){await db.auth.signOut();authUser=null;return message('loginMsg','Профиль табылмады. Әкімші profiles кестесіне тіркеуі керек.')}profile=p.data;$('teacherName').textContent=profile.full_name+' · '+profile.role;show('teacher');tab('tests')}async function logout(){if(db)await db.auth.signOut();authUser=null;show('home')}function tab(which,btn){['tests','results','create','ai'].forEach(id=>$(id).classList.add('hidden'));document.querySelectorAll('#teacher .tab').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');$(which).classList.remove('hidden');if(which==='tests')loadTests();if(which==='results')loadResults();if(which==='create')renderCreate();if(which==='ai')renderAI()}async function loadTests(){let {data,error}=await db.from('tests').select('*').order('created_at',{ascending:false});if(error)return message('tests',error.message);$('tests').innerHTML=data.length?`<div class="panel tablewrap"><table><tr><th>Тест</th><th>Бағыты</th><th>Сынып</th><th>Код</th><th>Күйі</th><th></th></tr>${data.map(t=>`<tr><td>${esc(t.title)}</td><td>${esc(t.test_type)}</td><td>${esc(t.grade)}</td><td><b>${esc(t.test_code)}</b></td><td>${t.is_published?'Жарияланған':'Жоба'}</td><td><button class="soft" onclick="publish('${t.id}',${!t.is_published})">${t.is_published?'Жасыру':'Жариялау'}</button></td></tr>`).join('')}</table></div>`:'<div class="panel">Әзірге тест жоқ.</div>'}async function publish(id,v){let {error}=await db.from('tests').update({is_published:v}).eq('id',id);if(error)alert(error.message);else loadTests()}
+function renderCreate(){
+ $('create').innerHTML=`<div class="panel"><h3>Жаңа тест</h3>
+ <div class="formgrid">
+  <div class="field"><label>Тест атауы</label><input id="ttitle"></div>
+  <div class="field"><label>Бағыты</label><select id="ttype"><option>ББЖМ</option><option>PISA</option><option>Пәндік тест</option></select></div>
+  <div class="field"><label>Пән</label><input id="tsubject"></div>
+  <div class="field"><label>Сынып</label><input id="tgrade" placeholder="7"></div>
+ </div>
+ <div class="field"><label>Word файлын жүктеу (.docx)</label><input id="docx" type="file" accept=".docx"><span class="muted">A), B), C), D), E) және одан көп нұсқаларды таниды. Жауап кілті құжаттың соңында болса да сәйкестендіруге тырысады.</span></div>
+ <button class="soft" onclick="importWord()">Word файлын оқу</button><div id="wordMsg"></div>
+ <div id="editor"></div>
+ <div class="row"><button class="soft" onclick="addQ()">＋ Сұрақ қосу</button><button class="primary" onclick="saveTest()">Тестті сақтау</button></div>
+ </div>`;
+ draft=[{text:'',opts:['','','',''],correct:null}];drawQ()
+}
+function readQ(){
+ draft=draft.map((q,i)=>{
+  const text=$('qtext'+i)?.value||'';
+  const opts=q.opts.map((_,j)=>$('opt'+i+j)?.value||'');
+  const sel=$('correct'+i)?.value??'';
+  return {text,opts,correct:sel===''?null:Number(sel)};
+ });
+}
+function addQ(){readQ();draft.push({text:'',opts:['','','',''],correct:null});drawQ()}
+function addOption(i){readQ();draft[i].opts.push('');drawQ()}
+function removeOption(i,j){readQ();if(draft[i].opts.length<=2)return alert('Кемінде 2 жауап нұсқасы болуы керек.');draft[i].opts.splice(j,1);if(draft[i].correct===j)draft[i].correct=null;else if(draft[i].correct>j)draft[i].correct--;drawQ()}
+function drawQ(){
+ $('editor').innerHTML=draft.map((q,i)=>`<div class="q">
+  <b>${i+1}-сұрақ</b>
+  <div class="field"><label>Сұрақ мәтіні</label><textarea id="qtext${i}">${esc(q.text)}</textarea></div>
+  <div class="formgrid">${q.opts.map((v,j)=>`<div class="field"><label>${String.fromCharCode(65+j)} жауабы</label><div class="row"><input id="opt${i}${j}" value="${esc(v)}"><button type="button" class="soft" onclick="removeOption(${i},${j})" title="Нұсқаны жою">−</button></div></div>`).join('')}</div>
+  <div class="row"><button type="button" class="soft" onclick="addOption(${i})">＋ Жауап нұсқасын қосу</button></div>
+  <div class="field"><label>Дұрыс жауап</label><select id="correct${i}"><option value="">Дұрыс жауапты таңдаңыз</option>${q.opts.map((x,j)=>`<option value="${j}" ${q.correct===j?'selected':''}>${String.fromCharCode(65+j)}</option>`).join('')}</select></div>
+ </div>`).join('')
+}
+function labelIndex(label){
+ const x=String(label||'').toUpperCase();
+ const map={A:0,'А':0,B:1,'Б':1,C:2,'В':2,D:3,'Г':3,E:4,'Д':4};
+ return Object.prototype.hasOwnProperty.call(map,x)?map[x]:-1;
+}
+async function importWord(){
+ let f=$('docx').files[0];if(!f)return message('wordMsg','Алдымен DOCX файлын таңдаңыз.');
+ try{
+  const x=await mammoth.extractRawText({arrayBuffer:await f.arrayBuffer()});
+  const lines=x.value.replace(/\r/g,'').split('\n').map(s=>s.trim()).filter(Boolean);
+  const out=[];const answerMap={};let current=null,inKey=false;
+  const flush=()=>{if(current&&current.text.trim()&&current.opts.length>=2)out.push(current);current=null};
+  for(const line of lines){
+   if(/(жауап\s*кілт|дұрыс жауаптар|ответы\s*на\s*тест|ключ ответ)/i.test(line)){flush();inKey=true;continue}
+   if(inKey){
+    const re=/(\d+)\s*[-.)=:]\s*([A-EА-Е])/gi;let m;
+    while((m=re.exec(line))!==null)answerMap[Number(m[1])]=m[2].toUpperCase();
+    continue;
+   }
+   const keyInline=line.match(/^(?:жауабы|дұрыс жауап|ответ)\s*[:\-]\s*([A-EА-Е])/i);
+   if(keyInline&&current){current.correctLabel=keyInline[1].toUpperCase();continue}
+   const opt=line.match(/^([A-EА-Е])\s*[).:]\s*(.*)$/i);
+   if(opt&&current){
+    current.opts.push(opt[2].trim());current.labels.push(opt[1].toUpperCase());continue;
+   }
+   const qmatch=line.match(/^(\d+)\s*[.)]\s*(.+)$/);
+   if(qmatch){flush();current={sourceNo:Number(qmatch[1]),text:qmatch[2].trim(),opts:[],labels:[],correct:null};continue}
+   if(current){
+    // Жауап кілті тақырыбынсыз берілген қысқа "1-A" форматын сұрақ деп қабылдамаймыз.
+    if(/^\d+\s*[-=:]\s*[A-EА-Е]$/i.test(line)){const z=line.match(/^(\d+)\s*[-=:]\s*([A-EА-Е])$/i);answerMap[Number(z[1])]=z[2].toUpperCase();continue}
+    if(current.opts.length)current.opts[current.opts.length-1]+=' '+line;
+    else current.text+=' '+line;
+   }
+  }
+  flush();
+  out.forEach((q,i)=>{
+   const label=q.correctLabel||answerMap[q.sourceNo]||answerMap[i+1];
+   const idx=labelIndex(label);
+   q.correct=idx>=0?q.labels.findIndex(l=>labelIndex(l)===idx):null;
+   if(q.correct<0)q.correct=null;
+   delete q.labels;delete q.sourceNo;delete q.correctLabel;
+  });
+  if(!out.length)return message('wordMsg','Сұрақтар танылмады. Құжатта сұрақтар 1. немесе 1) түрінде, жауаптар A) немесе A. түрінде берілуі керек.');
+  draft=out;drawQ();
+  const missing=out.filter(q=>q.correct===null).length;
+  message('wordMsg',`${out.length} сұрақ импортталды. ${missing} сұрақтың дұрыс жауабы танылмады — оларды мұғалім қолмен таңдауы керек.`,'success');
+ }catch(e){message('wordMsg','Word файлын оқу қатесі: '+e.message)}
+}
+async function saveTest(){
+ readQ();
+ let title=$('ttitle').value.trim(),grade=$('tgrade').value.trim();
+ if(!title||!grade||!draft.length||draft.some(q=>!q.text.trim()||q.opts.length<2||q.opts.some(o=>!o.trim())))return alert('Тест атауын, сыныпты, сұрақтарды және кемінде екі жауап нұсқасын толтырыңыз.');
+ if(draft.some(q=>q.correct===null||q.correct<0||q.correct>=q.opts.length))return alert('Әр сұрақтың дұрыс жауабын тексеріп, таңдаңыз. Жүйе жауапты автоматты түрде A деп белгілемейді.');
+ let code=Math.random().toString(36).slice(2,8).toUpperCase();
+ let {data,error}=await db.from('tests').insert({teacher_id:authUser.id,title,subject:$('tsubject').value.trim(),grade,test_type:$('ttype').value,test_code:code}).select().single();
+ if(error)return alert(error.message);
+ let rows=draft.map((q,i)=>({test_id:data.id,question_text:q.text,options:q.opts,correct_option:q.correct,question_order:i+1}));
+ let r=await db.from('questions').insert(rows);
+ if(r.error){await db.from('tests').delete().eq('id',data.id);return alert(r.error.message)}
+ alert('Тест сақталды. Оқушы коды: '+code);tab('tests',document.querySelector('#teacher .tab'))
+}
+function renderAI(){
+ $('ai').innerHTML=`<div class="panel"><h3>✨ ЖИ арқылы тест құрастыру</h3>
+ <p class="muted">Пән, сынып, тақырып және деңгей бойынша тест сұрақтарын дайындаңыз. Жасалған сұрақтар жарияланбай тұрып мұғалімнің тексеруіне беріледі.</p>
+ <div class="formgrid">
+  <div class="field"><label>Пән</label><input id="aiSubject" placeholder="Информатика"></div>
+  <div class="field"><label>Сынып</label><input id="aiGrade" type="number" min="1" max="11" placeholder="8"></div>
+  <div class="field"><label>Тақырып</label><input id="aiTopic" placeholder="Ақпаратты өлшеу"></div>
+  <div class="field"><label>Сұрақ саны</label><select id="aiCount"><option>5</option><option selected>10</option><option>15</option><option>20</option><option>25</option><option>30</option></select></div>
+  <div class="field"><label>Күрделілік</label><select id="aiLevel"><option>Жеңіл</option><option selected>Аралас</option><option>Орташа</option><option>Күрделі</option></select></div>
+ </div>
+ <button class="primary" onclick="generateAI()">ЖИ арқылы сұрақтар құрастыру</button><div id="aiMsg"></div><div id="aiPreview"></div>
+ </div>`
+}
+async function generateAI(){
+ const body={subject:$('aiSubject').value.trim(),grade:$('aiGrade').value.trim(),topic:$('aiTopic').value.trim(),count:Number($('aiCount').value),difficulty:$('aiLevel').value};
+ if(!body.subject||!body.grade||!body.topic)return message('aiMsg','Пәнді, сыныпты және тақырыпты толтырыңыз.');
+ if(!db)return message('aiMsg','Алдымен Supabase байланысын орнатыңыз.');
+ message('aiMsg','ЖИ сұрақтар дайындап жатыр...','notice');
+ try{
+  const {data,error}=await db.functions.invoke('generate-test',{body});
+  if(error)throw error;
+  if(!data?.questions?.length)throw new Error('ЖИ сұрақ қайтармады. Сервер функциясының жауабын тексеріңіз.');
+  const generatedQuestions=data.questions.map(q=>({text:q.text||q.question_text||'',opts:Array.isArray(q.options)?q.options:[],correct:Number.isInteger(q.correct_index)?q.correct_index:(Number.isInteger(q.correct_option)?q.correct_option:null),explanation:q.explanation||''}));
+  if(generatedQuestions.some(q=>q.opts.length<2||q.correct===null||q.correct<0||q.correct>=q.opts.length))throw new Error('ЖИ жауабының құрылымы дұрыс емес. Сұрақтарды қайта жасаңыз.');
+  $('aiPreview').innerHTML=`<div class="success">${generatedQuestions.length} сұрақ дайындалды. Мұғалім тексеруі үшін тест құрастыру бөліміне ауыстырылды.</div>`;
+  tab('create',document.querySelectorAll('#teacher .tab')[2]);
+  draft=generatedQuestions;drawQ();
+  $('ttitle').value=`${body.topic} — ЖИ тесті`;$('tsubject').value=body.subject;$('tgrade').value=body.grade;
+  message('wordMsg','ЖИ жасаған сұрақтарды міндетті түрде тексеріңіз.','notice');
+ }catch(e){message('aiMsg','ЖИ генерациясы іске аспады: '+(e.message||'Сервер функциясы әлі орнатылмаған.'))}
+}
 async function loadResults(){let {data:t,error}=await db.from('tests').select('id,title');if(error)return message('results',error.message);if(!t.length){$('results').innerHTML='<div class="panel">Әзірге тест жоқ.</div>';return}let map=Object.fromEntries(t.map(x=>[x.id,x.title])),{data,error:e}=await db.from('attempts').select('*').in('test_id',t.map(x=>x.id)).eq('status','completed').order('completed_at',{ascending:false});if(e)return message('results',e.message);$('results').innerHTML=data.length?`<div class="panel tablewrap"><table><tr><th>Оқушы</th><th>Сынып</th><th>Тест</th><th>Ұпай</th><th>Қате</th><th></th></tr>${data.map(a=>`<tr><td>${esc(a.student_name)}</td><td>${esc(a.student_class)}</td><td>${esc(map[a.test_id])}</td><td>${a.score}%</td><td>${a.wrong_count}</td><td><button class="soft" onclick="mistakes('${a.id}')">Қателер</button></td></tr>`).join('')}</table></div>`:'<div class="panel">Оқушылар тест тапсырған соң нәтижелер осында көрінеді.</div>'}async function mistakes(id){let {data,error}=await db.from('answers').select('selected_option,is_correct,questions(question_text,options,correct_option)').eq('attempt_id',id);if(error)return alert(error.message);let a=data.filter(x=>!x.is_correct);alert(a.length?a.map((x,i)=>`${i+1}. ${x.questions.question_text}\nОқушы жауабы: ${x.selected_option===null?'Жауап жоқ':x.questions.options[x.selected_option]}\nДұрыс жауап: ${x.questions.options[x.questions.correct_option]}`).join('\n\n'):'Қате жауап жоқ.')}
-async function startTest(){if(!client())return;let name=$('sname').value.trim(),grade=$('sclass').value.trim(),code=$('scode').value.trim().toUpperCase();if(!name||!grade||!code)return message('studentMsg','Аты-жөні, сыныбы және тест кодын толтырыңыз.');let {data,error}=await db.rpc('start_test',{p_code:code,p_student_name:name,p_student_class:grade});if(error)return message('studentMsg',error.message);if(!data.questions?.length)return message('studentMsg','Тестте сұрақ жоқ.');studentData={name,grade,attemptId:data.attempt_id};examData=data;$('examTitle').textContent=data.title;$('examMeta').textContent=`${data.test_type} · ${data.subject||''} · ${name} (${grade})`;$('examQuestions').innerHTML=data.questions.map((q,i)=>`<div class="q"><b>${i+1}. ${esc(q.question_text)}</b>${q.options.map((o,j)=>`<label class="option"><input type="radio" name="a${q.id}" value="${j}"><span>${'ABCD'[j]}) ${esc(o)}</span></label>`).join('')}</div>`).join('');show('exam')}async function finishTest(){let ans=examData.questions.map(q=>{let x=document.querySelector(`input[name="a${q.id}"]:checked`);return {question_id:q.id,selected_option:x?Number(x.value):null}});if(ans.some(x=>x.selected_option===null)&&!confirm('Жауапсыз сұрақ бар. Аяқтайсыз ба?'))return;let {data,error}=await db.rpc('submit_test',{p_attempt_id:studentData.attemptId,p_answers:ans});if(error)return alert(error.message);$('score').textContent=data.score+'%';$('summary').textContent=`${data.correct_count} дұрыс / ${data.total_questions} сұрақ · ${data.wrong_count} қате`;$('mistakes').innerHTML=examData.questions.map((q,i)=>({q,a:ans[i].selected_option})).filter(x=>x.a!==x.q.correct_option).map((x,i)=>`<div class="q"><b>${i+1}. ${esc(x.q.question_text)}</b><p style="color:#c33">Сіздің жауабыңыз: ${x.a===null?'Жауап жоқ':esc(x.q.options[x.a])}</p><p style="color:#16845e">Дұрыс жауап: ${esc(x.q.options[x.q.correct_option])}</p></div>`).join('')||'<div class="success">Барлық жауап дұрыс!</div>';show('result')}
+async function startTest(){if(!client())return;let name=$('sname').value.trim(),grade=$('sclass').value.trim(),code=$('scode').value.trim().toUpperCase();if(!name||!grade||!code)return message('studentMsg','Аты-жөні, сыныбы және тест кодын толтырыңыз.');let {data,error}=await db.rpc('start_test',{p_code:code,p_student_name:name,p_student_class:grade});if(error)return message('studentMsg',error.message);if(!data.questions?.length)return message('studentMsg','Тестте сұрақ жоқ.');studentData={name,grade,attemptId:data.attempt_id};examData=data;$('examTitle').textContent=data.title;$('examMeta').textContent=`${data.test_type} · ${data.subject||''} · ${name} (${grade})`;$('examQuestions').innerHTML=data.questions.map((q,i)=>`<div class="q"><b>${i+1}. ${esc(q.question_text)}</b>${q.options.map((o,j)=>`<label class="option"><input type="radio" name="a${q.id}" value="${j}"><span>${String.fromCharCode(65+j)}) ${esc(o)}</span></label>`).join('')}</div>`).join('');show('exam')}async function finishTest(){let ans=examData.questions.map(q=>{let x=document.querySelector(`input[name="a${q.id}"]:checked`);return {question_id:q.id,selected_option:x?Number(x.value):null}});if(ans.some(x=>x.selected_option===null)&&!confirm('Жауапсыз сұрақ бар. Аяқтайсыз ба?'))return;let {data,error}=await db.rpc('submit_test',{p_attempt_id:studentData.attemptId,p_answers:ans});if(error)return alert(error.message);$('score').textContent=data.score+'%';$('summary').textContent=`${data.correct_count} дұрыс / ${data.total_questions} сұрақ · ${data.wrong_count} қате`;$('mistakes').innerHTML=examData.questions.map((q,i)=>({q,a:ans[i].selected_option})).filter(x=>x.a!==x.q.correct_option).map((x,i)=>`<div class="q"><b>${i+1}. ${esc(x.q.question_text)}</b><p style="color:#c33">Сіздің жауабыңыз: ${x.a===null?'Жауап жоқ':esc(x.q.options[x.a])}</p><p style="color:#16845e">Дұрыс жауап: ${esc(x.q.options[x.q.correct_option])}</p></div>`).join('')||'<div class="success">Барлық жауап дұрыс!</div>';show('result')}
 </script></body></html>
